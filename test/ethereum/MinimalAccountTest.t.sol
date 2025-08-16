@@ -112,10 +112,14 @@ contract MinimalAccountTest is Test {
         PackedUserOperation memory packedUserOp = sendPackedUserOp.generateSignedUserOperation(
             executeCallData, helperConfig.getConfig(), address(minimalAccount)
         );
-
+        // deal Minimal Account funds to pay
         vm.deal(address(minimalAccount), 1e18);
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = packedUserOp;
+        // Because the random user is making a call with the User Operations — which contains the owners signature — it is valid.
+        // As discussed, the Entry Point calls validateUserOps in Minimal Account, which validates the signature of the User Operations.
+        // If the signature within the User Operation matches the owner — regardless of who called handleOps from the Entry Point — it is valid.
+
         vm.prank(randomUser);
         IEntryPoint(helperConfig.getConfig().entryPoint).handleOps(ops, payable(randomUser));
 
