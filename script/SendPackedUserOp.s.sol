@@ -21,14 +21,14 @@ contract SendPackedUserOp is Script {
      * @return Return the entire User Operation, including the signature. This will be used when our Minimal Account recovers the signature,
      * and compares with the off-chain users signer.
      */
-    function generateSignedUserOperation(bytes memory callData, HelperConfig.NetworkConfig memory config)
-        public
-        view
-        returns (PackedUserOperation memory)
-    {
+    function generateSignedUserOperation(
+        bytes memory callData,
+        HelperConfig.NetworkConfig memory config,
+        address minimalAccount
+    ) public view returns (PackedUserOperation memory) {
         // generate unsigned data
-        uint256 nonce = vm.getNonce(config.account);
-        PackedUserOperation memory userOp = _generateUnsignedUserOperation(callData, config.account, nonce);
+        uint256 nonce = vm.getNonce(minimalAccount) - 1;
+        PackedUserOperation memory userOp = _generateUnsignedUserOperation(callData, minimalAccount, nonce);
 
         // get userOp hash
         bytes32 userOpHash = IEntryPoint(config.entryPoint).getUserOpHash(userOp);
