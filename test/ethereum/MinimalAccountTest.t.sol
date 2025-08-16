@@ -6,11 +6,20 @@ import {MinimalAccount} from "src/ethereum/MinimalAccount.sol";
 import {DeployMinimal} from "script/DeployMinimal.s.sol";
 import {HelperConfig} from "script/HelperConfig.s.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {SendPackedUserOp} from "script/SendPackedUserOp.s.sol";
+import {PackedUserOperation} from "account-abstraction/contracts/interfaces/PackedUserOperation.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {IEntryPoint} from "account-abstraction/contracts/interfaces/IEntryPoint.sol";
 
 contract MinimalAccountTest is Test {
+    using MessageHashUtils for bytes32;
+
     HelperConfig helperConfig;
     MinimalAccount minimalAccount;
     ERC20Mock usdc;
+    SendPackedUserOp sendPackedUserOp;
+
     uint256 constant AMOUNT = 1e18;
     address randomUser = makeAddr("randomUser");
 
@@ -18,12 +27,25 @@ contract MinimalAccountTest is Test {
         DeployMinimal deployMinimal = new DeployMinimal();
         (helperConfig, minimalAccount) = deployMinimal.deployMinimalAccount();
         usdc = new ERC20Mock();
+        sendPackedUserOp = new SendPackedUserOp();
     }
 
+    /**
+     * \
+     * @notice Tests that the owner can execute commands directly.
+     */
     function testOwnerCanExecuteCommands() public {
         assertEq(usdc.balanceOf(address(minimalAccount)), 0);
         address dest = address(usdc);
         uint256 value = 0;
+        // Constructing the function data to send to execute.
+        // This will contain the function signature (which will be "mint(address,uint256)").
+        // -> the first 4 bytes of 0x40c10f19c047ae7dfa66d6312b683d2ea3dfbcb4159e96b967c5f4b0a86f2842 = (0x40c10f19)
+        // And encodes it with the function arguments [0] address(minimalAccount and [1] AMOUNT
+        // The final call data will look something like:
+        // 0x40c10f19 ...[padding of zeros] ... [0] bytes32 and [1] bytes32
+        // This gets passed into the execute, which makes a low-level call using this functionData,
+        // the value sent with the transaction (in our case, 0), and the smart contract address to call it on (usdc).
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
         vm.prank(minimalAccount.owner());
         minimalAccount.execute(dest, value, functionData);
@@ -35,7 +57,31 @@ contract MinimalAccountTest is Test {
         uint256 value = 0;
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
         vm.prank(randomUser);
+        // Our execute function only allows the owner or Entry Point to call it.
         vm.expectRevert(MinimalAccount.MinimalAccount__NotFromEntryPointOrOwner.selector);
         minimalAccount.execute(dest, value, functionData);
+    }
+
+    /**
+     * @notice Tests that we can recover the signature from the Packed User Operation
+     */
+    function testRecoverSignedOp() public {
+        address dest = address(usdc);
+        uint256 value = 0;
+        bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
+
+        // This simulates the Entry Point calling our Minimal Account which executes a call.
+        bytes memory executeCallData =
+            abi.encodeWithSelector(MinimalAccount.execute.selector, dest, value, functionData);
+        // Generates the Packed User Operation. It contains the calldata for the Entry Point and the configuration for the chain.
+        // The configuration for the chain will be used within the 'generateSignedUserOperation' to fetch the Entry Point address and the off-chain user.
+        PackedUserOperation memory packedUserOp =
+            sendPackedUserOp.generateSignedUserOperation(executeCallData, helperConfig.getConfig());
+        // We then get the hash for the User Operation
+        bytes32 userOperationHash = IEntryPoint(helperConfig.getConfig().entryPoint).getUserOpHash(packedUserOp);
+        // Format and use this hash, with the signature from the Packed User Operation,
+        // to see whether the owner (the off-chain user) signed the User Operation.
+        address actualSigner = ECDSA.recover(userOperationHash.toEthSignedMessageHash(), packedUserOp.signature);
+        assertEq(actualSigner, minimalAccount.owner());
     }
 }
