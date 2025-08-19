@@ -11,8 +11,9 @@ import {PackedUserOperation} from "account-abstraction/contracts/interfaces/Pack
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {IEntryPoint} from "account-abstraction/contracts/interfaces/IEntryPoint.sol";
+import {ZkSyncChainChecker} from "lib/foundry-devops/src/ZkSyncChainChecker.sol";
 
-contract MinimalAccountTest is Test {
+contract MinimalAccountTest is Test, ZkSyncChainChecker {
     using MessageHashUtils for bytes32;
 
     HelperConfig helperConfig;
@@ -34,7 +35,7 @@ contract MinimalAccountTest is Test {
      * \
      * @notice Tests that the owner can execute commands directly.
      */
-    function testOwnerCanExecuteCommands() public {
+    function testOwnerCanExecuteCommands() public skipZkSync {
         assertEq(usdc.balanceOf(address(minimalAccount)), 0);
         address dest = address(usdc);
         uint256 value = 0;
@@ -52,7 +53,7 @@ contract MinimalAccountTest is Test {
         assertEq(usdc.balanceOf(address(minimalAccount)), AMOUNT);
     }
 
-    function testNotOwnerCanNotExecuteCommand() public {
+    function testNotOwnerCanNotExecuteCommand() public skipZkSync {
         address dest = address(usdc);
         uint256 value = 0;
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
@@ -65,7 +66,7 @@ contract MinimalAccountTest is Test {
     /**
      * @notice Tests that we can recover the signature from the Packed User Operation
      */
-    function testRecoverSignedOp() public {
+    function testRecoverSignedOp() public skipZkSync {
         address dest = address(usdc);
         uint256 value = 0;
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
@@ -86,7 +87,7 @@ contract MinimalAccountTest is Test {
         assertEq(actualSigner, minimalAccount.owner());
     }
 
-    function testValidationOfUserOps() public {
+    function testValidationOfUserOps() public skipZkSync {
         address dest = address(usdc);
         uint256 value = 0;
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
@@ -103,7 +104,7 @@ contract MinimalAccountTest is Test {
         assertEq(validationData, 0);
     }
 
-    function testEntryPointCanExecuteCommands() public {
+    function testEntryPointCanExecuteCommands() public skipZkSync {
         address dest = address(usdc);
         uint256 value = 0;
         bytes memory functionData = abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), AMOUNT);
